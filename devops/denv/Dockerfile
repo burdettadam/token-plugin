@@ -57,8 +57,8 @@ RUN useradd -m -d /home/indy -s /bin/bash -p $(openssl passwd -1 "token") -u 100
 WORKDIR /home/indy
 
 # indy-node along with supervisor
-ENV INDY_NODE_VERSION ${INDY_NODE_VERSION:-1.7.1}
-ARG indy_plenum_ver=1.7.1
+ENV INDY_NODE_VERSION ${INDY_NODE_VERSION:-1.12.4}
+ARG indy_plenum_ver=1.12.4
 RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys CE7709D068DB5E88
 RUN echo "deb https://repo.sovrin.org/deb xenial rc" >> /etc/apt/sources.list \
     && apt-get update && apt-get install -y \
