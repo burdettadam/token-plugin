@@ -1,9 +1,16 @@
-version: '2'
+version: '3'
 
 services:
+
   token:
+    build:
+      context: devops/denv/
+      dockerfile: Dockerfile
     volumes:
-      - .:/home/indy/
-volumes:
-  .:
+      - ./sovtoken:/home/token/sovtoken
+      - ./sovtokenfees:/home/token/sovtokenfees
+      - ./node:/home/node/
+      - ./plenum:/home/plenum/
+
+
     

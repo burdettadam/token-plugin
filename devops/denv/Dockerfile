@@ -1,81 +1,118 @@
-FROM steptan/ubuntu-1604-rockdb-5.13.3-sharedlib 
+FROM python:3.8-slim-buster as indy
 
-ARG INDY_NODE_VERSION
-ARG POOL_IP
+ARG u_id=1000
+ARG u_name=user
 
-USER root
-
-RUN apt-get update -y && apt-get install -y \
-        apt-transport-https \
-        ca-certificates
-
-RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys CE7709D068DB5E88
-
-RUN echo "deb https://repo.sovrin.org/sdk/deb xenial stable" >> /etc/apt/sources.list
-
-RUN apt-get update -y && apt-get install -y \
-    # common stuff
-        git \
-        wget \
-        unzip \
-        python3.5 \
-        python3-pip \
-        python-setuptools \
-        python3-venv \
-        vim \
-        sudo \
-    # fpm
-        ruby \
-        ruby-dev \
-        rubygems \
-        gcc \
-        make \
-    # rocksdb python wrapper
-        libgflags-dev \
-        libbz2-dev \
-        libzstd-dev \
-        zlib1g-dev \
-        liblz4-dev \
-        libsnappy-dev \
-    # libindy
-        python3-nacl \
-        libindy-crypto=0.4.5 \
-        libindy=1.8.2
-        #//python3-indy-crypto
-
-RUN pip3 install -U \
-    setuptools \
-    'pip<10.0.0' \
-    setuptools \
-    pytest \
-    pytest-xdist \
-    python3-indy==1.8.2 \
-    mock
-
-RUN useradd -m -d /home/indy -s /bin/bash -p $(openssl passwd -1 "token") -u 1000 indy; usermod -aG sudo indy
-
-WORKDIR /home/indy
-
-# indy-node along with supervisor
-ENV INDY_NODE_VERSION ${INDY_NODE_VERSION:-1.12.4}
-ARG indy_plenum_ver=1.12.4
-RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys CE7709D068DB5E88
-RUN echo "deb https://repo.sovrin.org/deb xenial rc" >> /etc/apt/sources.list \
-    && apt-get update && apt-get install -y \
-	    supervisor \
-        python3-indy-crypto=0.4.5 \
-        indy-plenum=${indy_plenum_ver} \
-        indy-node=${INDY_NODE_VERSION} \
+RUN apt-get update && apt-get install -y \
+        software-properties-common \
     && rm -rf /var/lib/apt/lists/*
-COPY supervisord.conf /etc/supervisord.conf
-# config indy pool
-ENV POOL_IP ${POOL_IP:-127.0.0.1}
-USER indy
-RUN awk '{if (index($1, "NETWORK_NAME") != 0) {print("NETWORK_NAME = \"sandbox\"")} else print($0)}' /etc/indy/indy_config.py> /tmp/indy_config.py \
-    && mv /tmp/indy_config.py /etc/indy/indy_config.py \
-    && generate_indy_pool_transactions --nodes 4 --clients 5 --nodeNum 1 2 3 4 --ips="$POOL_IP,$POOL_IP,$POOL_IP,$POOL_IP" \
-    && chmod -R a+rw /var/lib/indy /var/log/indy /etc/indy
 
-EXPOSE 9701 9702 9703 9704 9705 9706 9707 9708
+RUN apt-get update && apt-get install -y gnupg
 
-CMD ["/usr/bin/supervisord"]
+#===========================================rocksdb===========================================
+#
+# based on Rocksdb install.md:
+#
+# Install git and make
+# Upgrade your gcc to version at least 4.7 to get C++11 support.
+RUN apt-get install -y git make build-essential
+# Install gflags
+RUN apt-get update && apt-get install -y libgflags-dev
+# Install snappy
+RUN apt-get update && apt-get install -y libsnappy-dev
+# Install zlib
+RUN apt-get update && apt-get install -y zlib1g-dev
+# Install bzip2
+RUN apt-get update && apt-get install -y libbz2-dev
+# Clone rocksdb #TODO: figure out if we need to clone a particular release
+RUN cd /tmp && git clone https://github.com/facebook/rocksdb.git && cd rocksdb && make clean && make static_lib
+#===========================================rocksdb===========================================
+#===========================================indy-node===========================================
+# addopted from https://github.com/hyperledger/indy-node/blob/master/docs/source/setup-dev.md
+
+# Installing libsodium...
+#RUN apt-get update && apt-get install -y libsodium-dev
+
+# manual libsodium18 install example
+#WORKDIR /root
+#RUN cd /usr/lib/x86_64-linux-gnu \
+#    && ln -s libssl.so.1.0.0 libssl.so.10 \
+#    && ln -s libcrypto.so.1.0.0 libcrypto.so.10 \
+#    && curl -fsSL https://github.com/jedisct1/libsodium/archive/1.0.18.tar.gz | tar -xz \
+#    && cd libsodium-1.0.18 \
+#    && ./autogen.sh \
+#    && ./configure \
+#    && make install \
+#    && cd .. \  
+#    && rm -rf libsodium-1.0.18 \
+#    && curl https://sh.rustup.rs -sSf | sh -s -- -y
+
+#===========================================ursa===========================================
+# Installing Ursa...
+#sudo apt-get install -y ursa
+
+WORKDIR /home/
+# TODO: use tag for ursa
+RUN git clone https://github.com/hyperledger/ursa.git 
+WORKDIR /home/ursa/
+
+FROM rust:latest as ursa-builder
+WORKDIR /usr/src/ursa
+COPY --from=indy /home/ursa/ .
+WORKDIR /usr/src/ursa/libursa
+
+RUN  cargo build --release
+
+FROM indy as indy-ursa
+COPY --from=ursa-builder /usr/src/ursa/target/release/libursa.so /usr/lib/
+
+#===========================================ursa===========================================
+#===========================================indy===========================================
+# Installing Libindy...
+# sudo apt-get install -y libindy
+
+# addopted from https://github.com/hyperledger/indy-sdk/blob/master/docs/build-guides/ubuntu-build.md
+
+WORKDIR /home/
+# TODO: use tag for libindy
+RUN git clone https://github.com/hyperledger/indy-sdk.git
+WORKDIR /home/indy-sdk/libindy
+
+FROM rust:latest as libindy-builder
+WORKDIR /usr/src/indy-sdk
+COPY --from=indy-ursa /home/indy-sdk/ .
+WORKDIR /usr/src/indy-sdk/libindy
+RUN apt-get update && apt-get install -y libsodium-dev
+RUN apt-get update && apt-get install -y python-zmq
+
+RUN  cargo build --release
+
+FROM libindy-builder as libindy-ursa
+COPY --from=libindy-builder /usr/src/indy-sdk/libindy/target/release/libindy.so /usr/lib/
+#===========================================indy===========================================
+
+#===========================================indy-node===========================================
+
+#RUN add-apt-repository "deb https://repo.sovrin.org/sdk/deb xenial master" \
+#    && apt-get update && apt-get install -y \
+#        libindy-crypto=0.4.5 \
+#        libindy=1.13.0~1420 \
+#        libsovtoken=1.0.2~92 \
+#    && rm -rf /var/lib/apt/lists/*
+
+#RUN mkdir -p /etc/indy && echo "ENABLED_PLUGINS = ['sovtoken', 'sovtokenfees']" > /etc/indy/indy_config.py \
+#    && pip3 install -U pipenv zipp==1.2.0
+
+# TODO workaround (suggested by http://click.pocoo.org/5/python3/)
+# to use pipenv's dependency 'click' (http://click.pocoo.org)
+# check for alternatives
+ENV LC_ALL=C.UTF-8
+ENV LANG=C.UTF-8
+
+RUN if [ "$u_id" != "0" ]; then \
+        useradd -ms /bin/bash -u $u_id $u_name; \
+    fi
+USER $u_id
+
+# TODO CMD ENTRYPOINT ...
+#ENV CI_ENV_VERSION=0.21.0
