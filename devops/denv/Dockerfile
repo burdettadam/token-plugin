@@ -10,7 +10,8 @@ RUN apt-get update && apt-get install -y \
 RUN apt-get update && apt-get install -y gnupg
 
 #===========================================rocksdb===========================================
-#
+# TODO: make this a separate image and copy libs into token dev container.
+# refer to make static_lib command. 
 # based on Rocksdb install.md:
 #
 # Install git and make
@@ -48,44 +49,38 @@ RUN cd /tmp && git clone https://github.com/facebook/rocksdb.git && cd rocksdb &
 #    && curl https://sh.rustup.rs -sSf | sh -s -- -y
 
 #===========================================ursa===========================================
-# Installing Ursa...
-#sudo apt-get install -y ursa
 
 WORKDIR /home/
-# TODO: use tag for ursa
-RUN git clone https://github.com/hyperledger/ursa.git 
-WORKDIR /home/ursa/
-
+# TODO: use github tag for ursa
+#=======ursa-builder=======
 FROM rust:latest as ursa-builder
-WORKDIR /usr/src/ursa
-COPY --from=indy /home/ursa/ .
+WORKDIR /usr/src/
+RUN git clone https://github.com/hyperledger/ursa.git 
 WORKDIR /usr/src/ursa/libursa
 
 RUN  cargo build --release
+#=======ursa-builder=======
 
 FROM indy as indy-ursa
 COPY --from=ursa-builder /usr/src/ursa/target/release/libursa.so /usr/lib/
 
 #===========================================ursa===========================================
 #===========================================indy===========================================
-# Installing Libindy...
-# sudo apt-get install -y libindy
-
-# addopted from https://github.com/hyperledger/indy-sdk/blob/master/docs/build-guides/ubuntu-build.md
 
 WORKDIR /home/
-# TODO: use tag for libindy
-RUN git clone https://github.com/hyperledger/indy-sdk.git
-WORKDIR /home/indy-sdk/libindy
-
+# TODO: use github tag for libindy
+#=======libindy-builder=======
 FROM rust:latest as libindy-builder
+# addopted from https://github.com/hyperledger/indy-sdk/blob/master/docs/build-guides/ubuntu-build.md
+WORKDIR /usr/src/
+RUN git clone https://github.com/hyperledger/indy-sdk.git
 WORKDIR /usr/src/indy-sdk
-COPY --from=indy-ursa /home/indy-sdk/ .
 WORKDIR /usr/src/indy-sdk/libindy
 RUN apt-get update && apt-get install -y libsodium-dev
-RUN apt-get update && apt-get install -y python-zmq
+RUN apt-get update && apt-get install -y libzmq3-dev
 
 RUN  cargo build --release
+#=======libindy-builder=======
 
 FROM libindy-builder as libindy-ursa
 COPY --from=libindy-builder /usr/src/indy-sdk/libindy/target/release/libindy.so /usr/lib/
@@ -106,13 +101,13 @@ COPY --from=libindy-builder /usr/src/indy-sdk/libindy/target/release/libindy.so 
 # TODO workaround (suggested by http://click.pocoo.org/5/python3/)
 # to use pipenv's dependency 'click' (http://click.pocoo.org)
 # check for alternatives
-ENV LC_ALL=C.UTF-8
-ENV LANG=C.UTF-8
+#ENV LC_ALL=C.UTF-8
+#ENV LANG=C.UTF-8
 
-RUN if [ "$u_id" != "0" ]; then \
-        useradd -ms /bin/bash -u $u_id $u_name; \
-    fi
-USER $u_id
+#RUN if [ "$u_id" != "0" ]; then \
+#        useradd -ms /bin/bash -u $u_id $u_name; \
+#    fi
+#USER $u_id
 
 # TODO CMD ENTRYPOINT ...
 #ENV CI_ENV_VERSION=0.21.0
