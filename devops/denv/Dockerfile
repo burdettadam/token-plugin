@@ -33,13 +33,11 @@ FROM rust:latest as ursa-builder
 WORKDIR /usr/src/
 RUN git clone https://github.com/hyperledger/ursa.git 
 WORKDIR /usr/src/ursa/libursa
-
 RUN  cargo build --release
 #=======ursa-builder=======
 
 FROM indy as indy-ursa
 COPY --from=ursa-builder /usr/src/ursa/target/release/libursa.so /usr/lib/
-
 #===========================================ursa===========================================
 #===========================================indy===========================================
 
@@ -59,6 +57,7 @@ RUN  cargo build --release
 
 FROM libindy-builder as libindy-ursa
 COPY --from=libindy-builder /usr/src/indy-sdk/libindy/target/release/libindy.so /usr/lib/
+COPY --from=ursa-builder /usr/src/ursa/target/release/libursa.so /usr/lib/
 #===========================================indy===========================================
 
 #===========================================rocksdb===========================================
@@ -123,15 +122,16 @@ WORKDIR /home
 RUN git clone https://github.com/hyperledger/indy-node.git
 RUN git clone https://github.com/hyperledger/indy-plenum.git
 WORKDIR /home/indy-plenum/
+RUN export LD_LIBRARY_PATH=$(echo $(dirname $(dirname $(which python)))/lib):${LD_LIBRARY_PATH}
 RUN pip3 install -e .[tests]
 WORKDIR /home/indy-node/
 RUN pip3 install -e .[tests]
 #RUN pip3 install boto3 ansible testinfra paramiko
 WORKDIR /home/indy-node/indy_node
+#RUN export LD_LIBRARY_PATH=/usr/lib/
 RUN pytest .
-
-WORKDIR /home/indy-plenum/
-RUN pytest .
+#WORKDIR /home/indy-plenum/
+#RUN pytest .
 
 #RUN add-apt-repository "deb https://repo.sovrin.org/sdk/deb xenial master" \
 #    && apt-get update && apt-get install -y \
