@@ -67,7 +67,7 @@ COPY --from=ursa-builder /usr/src/ursa/target/release/libursa.so /usr/lib/
 # COPY --from=librocksdb-builder /usr/local/lib/pkgconfig/rocksdb.pc /usr/local/lib/pkgconfig/
 # COPY --from=librocksdb-builder /usr/local/lib/librocksdb.so.6.14.0 /usr/local/lib/
 # RUN ln -fs /usr/local/lib/librocksdb.so.6.14.0 /usr/local/lib/librocksdb.so.6
-# RUN ln -fs /usr/local/lib/librocksdb.so.6.14.0 /usr/local/lib/librocksdb.so
+# RUN ln -fs /usr/local/lib/librocksdb.so.6.14.0 /usr/locl/lib/librocksdb.so
 #===========================================indy===========================================
 #===========================================rocksdb===========================================
 # based on Rocksdb install.md:
@@ -110,6 +110,8 @@ RUN pip3 install -e .[tests]
 WORKDIR /home/indy-node/
 RUN pip3 install -e .[tests]
 WORKDIR /home/indy-node/indy_node
+# lie about container version name
+RUN sed -i 's/Debian/Debian Ubuntu/g' /etc/os-release
 RUN pytest .
 WORKDIR /home/indy-plenum/
 #RUN pytest .
